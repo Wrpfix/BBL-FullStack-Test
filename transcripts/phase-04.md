@@ -173,3 +173,143 @@ step before this phase is considered closed.
   ones.
 - Frontend still has placeholder Bookmarks/Collections pages — wiring
   them to these new endpoints is out of scope for this phase.
+
+---
+
+## Addendum — Read-only collection sharing (2026-07-26)
+
+**Agent:** Claude Code (Sonnet 5)
+
+> Reconstructed summary of a later session in the same working tree, not a
+> raw log export.
+
+### Request
+
+Given the raw spec line "A user may want to share a collection with
+someone else," the user had already resolved the design themselves before
+asking for implementation (in Thai): read-only sharing via an unguessable
+per-collection share token, no login required to view. Explicitly out of
+scope: co-editing, sharing to a specific user (email/username lookup),
+a revoke UI, and expiry. Reasoning given: a capability token scoped to one
+collection is the smallest change that satisfies "may want to share"
+without widening the cross-user privacy invariant (CLAUDE.md) — the token
+never exposes the account, other collections, or unshared bookmarks.
+
+Concrete deliverables requested: schema fields, three endpoints (owner
+`POST`/`DELETE .../share`, public `GET /shared/:token`), tests for all the
+ownership/enumeration edge cases, `API_DESIGN.md` updates, and a
+self-report on token entropy and possible over-exposure in the response
+shape.
+
+### Implementation
+
+- **Schema:** `Collection.shareToken` (`String? @unique`) and
+  `Collection.shareEnabled` (`Boolean @default(false)`) added in
+  `backend/prisma/schema.prisma`. Not generated at collection-create time —
+  only on first `POST .../share`. `npx prisma generate` re-run to update
+  client types (no live MySQL in this environment, so no migration was
+  run — consistent with how the Collection/Bookmark models themselves
+  were only ever pushed via `schema.prisma` edits in this repo, never a
+  committed `prisma/migrations/` folder).
+- **Owner endpoints** (`CollectionsController`/`Service`, guarded,
+  `ownerId`-scoped via `updateMany`, same 404-not-403 pattern as the rest
+  of the resource):
+  - `POST /collections/:id/share` — generates `crypto.randomBytes(32)`
+    base64url (256 bits), **always regenerates even if a token already
+    exists**, sets `shareEnabled: true`. This doubles as the only
+    rotate/revoke-and-reissue mechanism — no separate rotate endpoint.
+  - `DELETE /collections/:id/share` — sets `shareEnabled: false` **and
+    nulls `shareToken`** (decided, not left ambiguous): a re-share mints a
+    fresh token anyway, so retaining the disabled one serves no function
+    and only leaves a stray value that could be replayed if `shareEnabled`
+    were ever bypassed elsewhere by a future bug.
+  - The regular `PUT`/`PATCH` update path has no interaction with these
+    fields — `ReplaceCollectionDto`/`PatchCollectionDto` don't include
+    them, so they can't be set outside the dedicated share/unshare
+    endpoints.
+- **Public endpoint:** new `backend/src/shared/` module
+  (`SharedController`/`Service`), reusing the existing `@Public()`
+  decorator (previously reserved in its doc comment for the health check
+  only — comment updated to reflect the second legitimate use).
+  `GET /shared/:token` runs a single `findFirst({ where: { shareToken,
+  shareEnabled: true } })` — the disabled case is excluded by the query
+  itself, not a separate check-then-branch, so "wrong token" and
+  "real-but-disabled token" are structurally the same code path, both
+  producing `404`. Response is hand-built as `{ name, bookmarks: [{title,
+  url, notes}] }` — never constructed by spreading a Prisma row, so there
+  is no field to forget to strip. No PATCH/PUT/DELETE handler exists on
+  this controller.
+- **Leak found and fixed during self-review:** owner-facing queries
+  (`findOne`, `findAll`, the patch/replace re-fetch, etc.) had no
+  `select`, so `shareToken` would have appeared in `GET /collections/:id`
+  and similar owner responses once a collection had been shared — not a
+  cross-user leak, but scope creep past "only `POST .../share`'s response
+  carries the token." Fixed with one global fix rather than patching each
+  call site: `PrismaService`'s constructor now passes `omit: { collection:
+  { shareToken: true } }` to the underlying `PrismaClient`, so every query
+  through this service omits it by construction; `share()` still returns
+  it because it returns the literal object it just wrote, not a query
+  result.
+
+### Tests
+
+- `collections.service.spec.ts` extended with `share`/`unshare` cases:
+  ownerId-scoped `updateMany` call shape, 404-not-403 for a foreign id,
+  token freshness across repeated calls.
+- New `shared.service.spec.ts`: query shape (`shareToken` +
+  `shareEnabled: true` in one `where`), response strips everything but
+  `name`/`bookmarks[].{title,url,notes}`, 404 for a nonexistent token and
+  for a disabled one.
+- New `test/shared.e2e-spec.ts` — the one part of this addendum that goes
+  through the real Nest routing/guard stack (via `Test.createTestingModule`
+  + `overrideProvider(PrismaService)`, no live DB needed) rather than a
+  plain mocked-Prisma unit test, because the requirement being verified
+  ("no route exists," "the guard rejects before the handler runs") is a
+  property of routing/wiring, not of service logic:
+  - anonymous `GET /api/shared/:token` succeeds with the trimmed shape;
+  - unknown token and disabled token both `404`;
+  - `PATCH`/`PUT`/`DELETE` on `/api/shared/:token` all `404` — no handler
+    registered, not just missing a frontend button;
+  - a share token sent as `Authorization: Bearer <token>` against a real
+    write route (`PATCH`/`DELETE /collections/:id`) gets `401` from the
+    guard itself (the token isn't a valid JWT), confirmed by asserting
+    `prisma.collection.updateMany` was never called.
+- Full run: 7 suites / 40 unit tests + 5 e2e tests passing.
+  `npm run lint` re-checked against the pre-existing baseline (`git
+  stash` comparison, same method as phase 4 proper): the only errors on
+  touched files are the same already-accepted
+  `@typescript-eslint/unbound-method` pattern on mocked-Prisma spec
+  methods — no new category of lint error introduced.
+
+### Docs reconciliation
+
+`API_DESIGN.md`: added the two owner endpoints to the Collection table,
+a new "Sharing (read-only, public)" section for `GET /shared/:token`
+documenting the enumeration-protection behavior explicitly, and a note on
+token entropy/generation plus the `omit`-based leak guarantee. Top-of-file
+implemented-endpoints line updated to mention sharing.
+
+### Self-review answers requested by the user
+
+- **Entropy:** `crypto.randomBytes(32)` (CSPRNG, not `Math.random`),
+  base64url → 43 chars, 256 bits — well beyond brute-forceable (for scale,
+  UUIDv4 is 122 bits and is already considered fine for this purpose).
+- **Over-exposure found:** yes — see "Leak found and fixed" above
+  (`shareToken` reachable from owner-facing reads before the `omit` fix).
+  No leak found in the public endpoint itself; it never touches a raw
+  Prisma row.
+
+### Commits
+
+Not yet committed as of this addendum — same open item as the rest of
+phase 4: split into small logical commits (schema, service methods +
+`omit` fix, `shared` module + wiring, tests, docs) before considering this
+closed, per `CLAUDE.md` rule 4.
+
+### Open items carried forward
+
+- Commit the above in small chunks (not yet done this session).
+- No migration file exists for any model in this repo yet (including this
+  addendum's new columns) — tracked as a pre-existing gap, not introduced
+  here.
+- Frontend has no UI for sharing yet — out of scope for this addendum.
