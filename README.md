@@ -63,10 +63,13 @@ docker run -d --name bbl-mysql -p 3306:3306 \
   -e MYSQL_ROOT_PASSWORD=root -e MYSQL_DATABASE=bookmarks mysql:8
 ```
 
-Then apply migrations:
+Then apply migrations (`npm run --workspace backend prisma ...` does **not**
+work — there's no `prisma` script in `backend/package.json`, so `npm run`
+would just error with `Missing script: "prisma"`; use `npm exec` instead,
+which runs the `prisma` CLI itself inside the `backend` workspace):
 
 ```bash
-npm run --workspace backend prisma migrate dev
+npm exec --workspace backend -- prisma migrate dev
 ```
 
 ### Run the dev servers (separate terminals)
@@ -101,7 +104,7 @@ migrations first:
 docker run -d --name bbl-mysql-test -p 3308:3306 \
   -e MYSQL_ROOT_PASSWORD=root -e MYSQL_DATABASE=bookmarks_test mysql:8.0
 DATABASE_URL="mysql://root:root@localhost:3308/bookmarks_test" \
-  npm run --workspace backend prisma migrate deploy
+  npm exec --workspace backend -- prisma migrate deploy
 DATABASE_URL="mysql://root:root@localhost:3308/bookmarks_test" \
   npm run --workspace backend test:e2e
 ```
