@@ -1,8 +1,9 @@
 # API Design
 
 Source of truth for the API shape. Update this **before** implementing or
-changing an endpoint. Auth, User (`/me`), Collection, and Bookmark endpoints
-are implemented as of 2026-07-26 — see [backend/src](backend/src).
+changing an endpoint. Auth, User (`/me`), Collection (including read-only
+sharing), and Bookmark endpoints are implemented as of 2026-07-26 — see
+[backend/src](backend/src).
 
 ## Conventions
 
@@ -127,6 +128,23 @@ rather than requiring a default collection to exist.
 | PATCH  | `/api/collections/:id`           | Partial update of `name` (owner only) |
 | DELETE | `/api/collections/:id`           | Delete; bookmarks inside become Unsorted (`collectionId = null`), not deleted |
 | GET    | `/api/collections/:id/bookmarks` | List bookmarks in this collection (owner only). Paginated |
+| POST   | `/api/collections/:id/share`     | (Owner only.) Issues a fresh, unguessable `shareToken` and sets `shareEnabled = true`. **Always regenerates the token, even if one already exists** — this is the only rotate/revoke-and-reissue mechanism, there is no separate rotate endpoint. `201` body: `{ "shareToken": "...", "shareEnabled": true }`. `404` if `:id` isn't owned by the caller. |
+| DELETE | `/api/collections/:id/share`     | (Owner only.) Sets `shareEnabled = false` **and nulls `shareToken`** — a re-share always mints a new token anyway, so nothing is gained by retaining the disabled one, and not retaining it removes a stray token as a replay target if `shareEnabled` is ever bypassed elsewhere. `204` on success, `404` if `:id` isn't owned by the caller. |
+
+### Sharing (read-only, public)
+
+| Method | Path                  | Description |
+|--------|------------------------|--------------|
+| GET    | `/api/shared/:token`  | **Public — no `Authorization` header, no auth guard.** Looks up a Collection by `shareToken` where `shareEnabled = true`. Returns `200` with `{ "name": "...", "bookmarks": [{ "title", "url", "notes" }] }` — never `ownerId`, `id`, timestamps, or anything else identifying the owner or account. `404` for both a token that never existed **and** a token that exists but is currently disabled (`shareEnabled = false`) — those two cases are made to look identical (same status, same body, same query — the `WHERE shareToken = ? AND shareEnabled = true` clause excludes disabled rows outright, it doesn't check-then-branch) specifically so the endpoint can't be used to enumerate which tokens are real vs. fake vs. revoked. This route has no PATCH/PUT/DELETE handler under any path — the share token is structurally read-only, not just hidden from the frontend. |
+
+`shareToken` is 32 random bytes (`crypto.randomBytes`, base64url-encoded,
+43 chars) — 256 bits of entropy, generated fresh on every `POST .../share`
+call. `PrismaService` applies a global `omit: { collection: { shareToken:
+true } }`, so `shareToken` never appears in any query result anywhere in
+the app (including owner-facing `GET /collections/:id` etc.) except the
+literal response object `POST .../share` constructs by hand — one
+enforcement point instead of relying on every query to remember a
+`select`.
 
 ## Resource: Bookmark
 
