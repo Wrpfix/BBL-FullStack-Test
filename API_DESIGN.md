@@ -1,8 +1,8 @@
 # API Design
 
 Source of truth for the API shape. Update this **before** implementing or
-changing an endpoint. Nothing in this file is implemented yet — this phase
-is scaffold + docs only (see [AI_WORKFLOW.md](AI_WORKFLOW.md)).
+changing an endpoint. Auth, User (`/me`), Collection, and Bookmark endpoints
+are implemented as of 2026-07-26 — see [backend/src](backend/src).
 
 ## Conventions
 
@@ -20,8 +20,12 @@ is scaffold + docs only (see [AI_WORKFLOW.md](AI_WORKFLOW.md)).
   ```json
   { "data": [ /* items */ ], "page": 1, "limit": 20, "total": 42 }
   ```
-- Errors: standard Nest HTTP exception shape —
-  `{ "statusCode": 404, "message": "...", "error": "Not Found" }`.
+- Errors: one schema for every non-2xx response across the whole API — the
+  standard Nest HTTP exception shape,
+  `{ "statusCode": 404, "message": "...", "error": "Not Found" }`. Every
+  thrown exception (`NotFoundException`, `BadRequestException`, validation
+  failures from `ValidationPipe`) produces this same shape; no endpoint has
+  a custom error format.
 - Timestamps: ISO 8601 strings (`createdAt`, `updatedAt`), server-generated.
 
 ## Auth0 tenant capabilities (verified)
@@ -78,8 +82,7 @@ isn't visible from `.well-known` endpoints (see note above).
 
 Internal record mapped 1:1 to an Auth0 identity, created via just-in-time
 provisioning the first time a verified access token is seen for a given
-`sub` — see decision 10 in [DECISIONS.md](DECISIONS.md). Not exposed
-through any endpoint in this phase.
+`sub` — see decision 10 in [DECISIONS.md](DECISIONS.md).
 
 | Field      | Type     | Notes                                                        |
 |------------|----------|----------------------------------------------------------------|
@@ -88,20 +91,25 @@ through any endpoint in this phase.
 | `email`    | string   | unique; placeholder value on JIT-created users until a profile-sync step exists (access tokens don't carry `email` — see decision 9) |
 | `createdAt`| datetime |                                                                |
 
+### Endpoints
+
+| Method | Path       | Description                                    |
+|--------|------------|--------------------------------------------------|
+| GET    | `/api/me`  | Return the caller's own User record, derived from the verified token's `sub` — never from a client-supplied id |
+
 ## Resource: Collection
 
 A named grouping of bookmarks, owned by exactly one user.
 
-> **Open discrepancy (flagged, not yet resolved):** the Prisma schema does
-> not currently include `description` — see the same note under Bookmark
-> below.
+> **Discrepancy resolved (2026-07-26):** the Prisma schema does not include
+> `description` and none was added — the field list below now matches
+> [backend/prisma/schema.prisma](backend/prisma/schema.prisma) exactly.
 
 | Field         | Type      | Notes                                   |
 |---------------|-----------|------------------------------------------|
 | `id`          | number    | autoincrement, server-generated          |
 | `ownerId`     | number    | internal `User.id`, never client-settable |
 | `name`        | string    | required, 1–100 chars                    |
-| `description` | string?   | optional, ≤500 chars — **not in current schema** |
 | `createdAt`   | datetime  |                                           |
 | `updatedAt`   | datetime  |                                           |
 
@@ -110,25 +118,26 @@ rather than requiring a default collection to exist.
 
 ### Endpoints
 
-| Method | Path                | Description                          |
-|--------|----------------------|---------------------------------------|
-| GET    | `/api/collections`     | List the caller's collections        |
-| POST   | `/api/collections`     | Create a collection                  |
-| GET    | `/api/collections/:id` | Get one collection (owner only)      |
-| PATCH  | `/api/collections/:id` | Update name/description (owner only) |
-| DELETE | `/api/collections/:id` | Delete; bookmarks inside become Unsorted (`collectionId = null`), not deleted |
+| Method | Path                            | Description                          |
+|--------|----------------------------------|---------------------------------------|
+| GET    | `/api/collections`               | List the caller's collections. Paginated (`?page=&limit=`) |
+| POST   | `/api/collections`               | Create a collection                  |
+| GET    | `/api/collections/:id`           | Get one collection (owner only)      |
+| PUT    | `/api/collections/:id`           | Full replace of `name` (owner only)  |
+| PATCH  | `/api/collections/:id`           | Partial update of `name` (owner only) |
+| DELETE | `/api/collections/:id`           | Delete; bookmarks inside become Unsorted (`collectionId = null`), not deleted |
+| GET    | `/api/collections/:id/bookmarks` | List bookmarks in this collection (owner only). Paginated |
 
 ## Resource: Bookmark
 
 A saved link, owned by exactly one user, optionally filed into a Collection.
 
-> **Open discrepancy (flagged, not yet resolved):** the Prisma schema added
-> in [backend/prisma/schema.prisma](backend/prisma/schema.prisma) implements
-> a reduced field set (`notes` only, no `description`/`faviconUrl`/
-> `isRead`/`isFavorite`) per an explicit schema spec given for that task.
-> The table below still documents the originally designed fields. Reconcile
-> before implementing the Bookmark endpoints — either extend the schema or
-> trim this table to match.
+> **Discrepancy resolved (2026-07-26):** the field list below now matches
+> the implemented schema (`notes` only) — `description`/`faviconUrl`/
+> `isRead`/`isFavorite` were dropped from this doc rather than added to the
+> schema. Bookmark endpoints implement the reduced field set below; the
+> read-tracking endpoint (`PATCH /:id/read`) was dropped along with
+> `isRead`.
 
 | Field         | Type      | Notes                                          |
 |---------------|-----------|--------------------------------------------------|
@@ -137,24 +146,28 @@ A saved link, owned by exactly one user, optionally filed into a Collection.
 | `collectionId`| number?   | FK → Collection, nullable ("Unsorted")          |
 | `url`         | string    | required, must be a valid absolute URL          |
 | `title`       | string    | required; client may prefill from page metadata |
-| `notes`       | string?   | implemented in schema; supersedes `description` below pending reconciliation |
-| `description` | string?   | optional, ≤1000 chars — **not in current schema**, see note above |
-| `faviconUrl`  | string?   | optional — **not in current schema**            |
-| `isRead`      | boolean   | default `false` — **not in current schema**     |
-| `isFavorite`  | boolean   | default `false` — **not in current schema**     |
+| `notes`       | string?   | optional, ≤2000 chars                           |
 | `createdAt`   | datetime  |                                                  |
 | `updatedAt`   | datetime  |                                                  |
 
 ### Endpoints
 
-| Method | Path                          | Description                                             |
-|--------|-------------------------------|-----------------------------------------------------------|
-| GET    | `/api/bookmarks`                | List caller's bookmarks. Filters: `collectionId`, `isRead`, `isFavorite`, `q` (search title/url) |
-| POST   | `/api/bookmarks`                | Create a bookmark                                        |
-| GET    | `/api/bookmarks/:id`            | Get one bookmark (owner only)                             |
-| PATCH  | `/api/bookmarks/:id`            | Update fields (owner only)                                 |
-| DELETE | `/api/bookmarks/:id`            | Delete (owner only)                                         |
-| PATCH  | `/api/bookmarks/:id/read`       | Toggle/set `isRead` (owner only)                             |
+| Method | Path                     | Description                                             |
+|--------|--------------------------|-----------------------------------------------------------|
+| GET    | `/api/bookmarks`         | List caller's bookmarks. Filter: `collectionId`. Paginated (`?page=&limit=`) |
+| POST   | `/api/bookmarks`         | Create a bookmark                                        |
+| GET    | `/api/bookmarks/:id`     | Get one bookmark (owner only)                             |
+| PUT    | `/api/bookmarks/:id`     | Full replace (`url`, `title` required; `notes`/`collectionId` optional) (owner only) |
+| PATCH  | `/api/bookmarks/:id`     | Partial update of any field (owner only)                   |
+| DELETE | `/api/bookmarks/:id`     | Delete (owner only)                                         |
+
+`collectionId` (create/update) is validated against the caller's own
+collections: a foreign or nonexistent id both produce the identical
+`400 Bad Request` — never a 403/404 that would let the response distinguish
+"exists but isn't yours" from "doesn't exist" for an id supplied in the
+request *body* (the URL-path ownership rule — 404 for foreign/missing — only
+applies to the resource identified by the path itself). Passing
+`collectionId: null` explicitly unsets it back to "Unsorted".
 
 ## Open questions (resolve before implementing)
 
