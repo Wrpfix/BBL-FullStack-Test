@@ -48,8 +48,10 @@ npm run dev:backend
 npm run dev:frontend
 ```
 
-Backend defaults to `http://localhost:3000`, frontend to Vite's default
-dev port.
+Backend defaults to `http://localhost:3001`, frontend runs on
+`http://localhost:3000` (pinned, not Vite's default 5173) — the Auth0
+Application's registered callback URL is `http://localhost:3000/callback`,
+so the frontend owns port 3000 and the backend moved to 3001.
 
 ### Backend needs a MySQL database
 
