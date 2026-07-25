@@ -59,6 +59,23 @@ after.
    messages that explain *why*. Do not squash a feature branch's history
    away before or during merge.
 
+## Agent capabilities
+
+- **`/security-review`** ([.agent/commands/security-review.md](.agent/commands/security-review.md))
+  — a custom slash command that audits every `backend/src/**/*.controller.ts`
+  and `*.service.ts` file for the three privacy invariants above: missing
+  auth guards, missing `ownerId` scoping on a Prisma call, and 403-instead-
+  of-404 existence leaks. It reads code and reports a markdown table; it
+  never edits files. Created because these invariants are exactly the kind
+  of thing that's easy to get right once and regress on silently in a later
+  PR (a new controller method, a new Prisma call added under time pressure)
+  — a repeatable, on-demand check catches that before it's a commit, rather
+  than relying on a human remembering to re-read CLAUDE.md every time.
+  Run it before committing any change that touches a controller or
+  service, and periodically as a regression check. A sample run (whole
+  backend, clean result) is recorded in
+  [transcripts/security-review-2026-07-26.md](transcripts/security-review-2026-07-26.md).
+
 ## Other docs in this repo
 
 - [API_DESIGN.md](API_DESIGN.md) — resource/endpoint contracts (source of truth for the API).
