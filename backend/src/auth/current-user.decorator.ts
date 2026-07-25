@@ -1,8 +1,10 @@
 import { createParamDecorator, ExecutionContext } from '@nestjs/common';
 
 export interface AuthenticatedUser {
-  /** Auth0 `sub` claim from the verified access token — used as `ownerId`. */
-  id: string;
+  /** Internal User.id — this is the value used as `ownerId` on every scoped query. */
+  id: number;
+  /** Auth0 `sub` claim from the verified access token, kept for reference/logging. */
+  auth0Sub: string;
 }
 
 export const CurrentUser = createParamDecorator(
