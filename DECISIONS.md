@@ -158,3 +158,58 @@ until a real profile-sync step (e.g. calling Auth0's `/userinfo` with the
 token, or switching the frontend to also send the ID token for that one
 purpose) is built. Tracked as an open item — see
 [API_DESIGN.md](API_DESIGN.md)'s User resource section.
+
+## 11. Auth0 token cache: `memory`, not `localStorage`
+
+**Context:** Discovered live while wiring up the frontend (phase 5), not
+planned up front — `@auth0/auth0-react`'s `cacheLocation` option controls
+where the SDK persists the token cache, and defaults to `memory`.
+
+**Decision:** Kept `cacheLocation="memory"` (tokens never touch
+`localStorage`) rather than switching to `localStorage` for a smoother
+reload experience.
+
+**Why:** `memory` keeps tokens out of `localStorage`, which is readable by
+any script on the page — an XSS-hardening trade-off. The cost is that a
+hard page reload or direct URL navigation drops the session and forces the
+user through Auth0's login/consent screen again (only client-side route
+changes keep the in-memory token alive). This was surfaced as a real
+product trade-off rather than silently switched to `localStorage` to make
+the demo feel smoother.
+
+**Consequences:** Users lose their session on every hard reload — a real
+UX cost for a "read later" app people may reload often. **Not fully
+closed**: revisit if that UX cost turns out to matter more in practice
+than the XSS-hardening benefit; `localStorage` (or a refresh-token-only
+persisted strategy) is the fallback if so.
+
+## 12. Bookmark/Collection field set trimmed to what's implemented, not the original design-doc list
+
+**Context:** The original `API_DESIGN.md` draft (written before
+implementation, per decision 7's scaffold-first rule) listed a wider field
+set — `Collection.description`, and `Bookmark.description` /
+`faviconUrl` / `isRead` / `isFavorite` (with a matching
+`PATCH /bookmarks/:id/read` endpoint). None of these were ever added to
+the Prisma schema during implementation (phases 2-3); by phase 4 this was
+a flagged, unresolved discrepancy between the doc and the code.
+
+**Decision:** Resolved the discrepancy by trimming `API_DESIGN.md` down to
+match the implemented schema, rather than adding the missing fields to the
+schema to match the original doc. `Bookmark` ships with `notes` only;
+`Collection` has no `description`; the read-tracking endpoint was dropped
+along with `isRead`.
+
+**Why:** No explicit instruction ever asked for the extra fields to be
+built, and by phase 4 the CRUD/sharing feature set was already functioning
+end-to-end without them — closing the gap by narrowing the spec to
+reality was lower-risk than retrofitting schema fields (and a migration)
+for functionality nothing had asked for yet.
+
+**Consequences:** Favorites, read/unread tracking, per-item descriptions,
+and favicons are not available in v1. Re-adding any of them later is a
+normal additive migration (new nullable columns), not a breaking change —
+tracked implicitly via this decision rather than as an open question, since
+the *original* fields were a draft guess, not a confirmed requirement.
+`_(judgment call — if favorites/read-tracking were actually a firm
+requirement rather than draft placeholders, this decision should be
+reopened rather than treated as settled.)_`
