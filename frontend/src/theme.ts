@@ -1,0 +1,9 @@
+import { createTheme } from '@mui/material/styles';
+
+export const theme = createTheme({
+  palette: {
+    mode: 'light',
+    primary: { main: '#2f6f4f' },
+  },
+  shape: { borderRadius: 8 },
+});

@@ -1,0 +1,12 @@
+// Resource models (Collection, Bookmark, ...) are designed in ../../API_DESIGN.md
+// and will be added in a later implementation phase — this scaffold only wires
+// up the Prisma <-> MySQL connection.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}

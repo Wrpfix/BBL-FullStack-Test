@@ -1,0 +1,35 @@
+# dependencies
+node_modules/
+
+# env
+.env
+.env.local
+.env.*.local
+
+# build output
+dist/
+build/
+
+# frontend (vite)
+frontend/dist/
+
+# backend (nest / prisma)
+backend/dist/
+backend/generated/
+
+# logs
+*.log
+npm-debug.log*
+
+# coverage
+coverage/
+
+# editor / OS
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+
+# Claude Code local settings (machine-specific)
+.claude/settings.local.json
