@@ -119,3 +119,42 @@ access token won't carry the right `aud` and every request will be
 rejected. Still unverified: whether the API is configured for RS256
 (signed JWT) vs. opaque access tokens in the Auth0 dashboard — confirm
 before relying on JWKS-based verification in production.
+
+## 10. Autoincrement `Int` ids, and just-in-time user provisioning
+
+**Context:** [API_DESIGN.md](API_DESIGN.md) originally specified cuid
+string ids for Collection/Bookmark, with `ownerId` set directly to the
+Auth0 `sub`. Implementing the Prisma schema + auth guard together surfaced
+a cleaner alternative and forced a choice on unknown users at auth time.
+
+**Decision (ids):** `User`, `Collection`, and `Bookmark` all use
+autoincrement `Int` ids, per explicit instruction for this task. `ownerId`
+on Collection/Bookmark is a foreign key to the internal `User.id`, not the
+raw Auth0 `sub` string.
+
+**Why:** An internal integer id decouples storage from the identity
+provider's string format, and keeps FK joins/indexes cheap. It does mean
+resource ids are guessable/sequential — acceptable here because ownership
+is still enforced on every query (rule 2 in [CLAUDE.md](CLAUDE.md)) and
+cross-user requests return `404` regardless of whether the guessed id
+exists (decision 5), so an attacker learns nothing by guessing.
+
+**Decision (unknown `sub`):** The `JwtStrategy` auto-creates
+(`upsert`s) a `User` row the first time it sees a valid, fully-verified
+token for a `sub` it hasn't seen before ("just-in-time provisioning"),
+rather than rejecting unrecognized users.
+
+**Why:** By the time `validate()` runs, `passport-jwt` has already checked
+signature, issuer, audience, and expiry — the token is a trustworthy
+assertion of identity from Auth0. Requiring a separate
+registration/provisioning step before first API use would just be an extra
+round trip enforcing nothing additional, since Auth0 (not this backend) is
+the source of truth for "is this a real account."
+
+**Consequences:** Access tokens don't carry an `email` claim (decision 9),
+so JIT-created users get a placeholder email
+(`<sub>@placeholder.invalid`) satisfying the `email` unique constraint
+until a real profile-sync step (e.g. calling Auth0's `/userinfo` with the
+token, or switching the frontend to also send the ID token for that one
+purpose) is built. Tracked as an open item — see
+[API_DESIGN.md](API_DESIGN.md)'s User resource section.

@@ -74,16 +74,34 @@ Algorithm for the `https://bbl-candidate-test-api` API) that access tokens
 are actually issued as signed RS256 JWTs and not opaque tokens — this
 isn't visible from `.well-known` endpoints (see note above).
 
+## Resource: User
+
+Internal record mapped 1:1 to an Auth0 identity, created via just-in-time
+provisioning the first time a verified access token is seen for a given
+`sub` — see decision 10 in [DECISIONS.md](DECISIONS.md). Not exposed
+through any endpoint in this phase.
+
+| Field      | Type     | Notes                                                        |
+|------------|----------|----------------------------------------------------------------|
+| `id`       | number   | autoincrement, server-generated; used as `ownerId` everywhere |
+| `auth0Sub` | string   | Auth0 `sub` claim, unique                                     |
+| `email`    | string   | unique; placeholder value on JIT-created users until a profile-sync step exists (access tokens don't carry `email` — see decision 9) |
+| `createdAt`| datetime |                                                                |
+
 ## Resource: Collection
 
 A named grouping of bookmarks, owned by exactly one user.
 
+> **Open discrepancy (flagged, not yet resolved):** the Prisma schema does
+> not currently include `description` — see the same note under Bookmark
+> below.
+
 | Field         | Type      | Notes                                   |
 |---------------|-----------|------------------------------------------|
-| `id`          | string    | cuid, server-generated                   |
-| `ownerId`     | string    | Auth0 `sub`, never client-settable       |
+| `id`          | number    | autoincrement, server-generated          |
+| `ownerId`     | number    | internal `User.id`, never client-settable |
 | `name`        | string    | required, 1–100 chars                    |
-| `description` | string?   | optional, ≤500 chars                     |
+| `description` | string?   | optional, ≤500 chars — **not in current schema** |
 | `createdAt`   | datetime  |                                           |
 | `updatedAt`   | datetime  |                                           |
 
@@ -104,17 +122,26 @@ rather than requiring a default collection to exist.
 
 A saved link, owned by exactly one user, optionally filed into a Collection.
 
+> **Open discrepancy (flagged, not yet resolved):** the Prisma schema added
+> in [backend/prisma/schema.prisma](backend/prisma/schema.prisma) implements
+> a reduced field set (`notes` only, no `description`/`faviconUrl`/
+> `isRead`/`isFavorite`) per an explicit schema spec given for that task.
+> The table below still documents the originally designed fields. Reconcile
+> before implementing the Bookmark endpoints — either extend the schema or
+> trim this table to match.
+
 | Field         | Type      | Notes                                          |
 |---------------|-----------|--------------------------------------------------|
-| `id`          | string    | cuid, server-generated                          |
-| `ownerId`     | string    | Auth0 `sub`, never client-settable              |
-| `collectionId`| string?   | FK → Collection, nullable ("Unsorted")          |
+| `id`          | number    | autoincrement, server-generated                 |
+| `ownerId`     | number    | internal `User.id`, never client-settable       |
+| `collectionId`| number?   | FK → Collection, nullable ("Unsorted")          |
 | `url`         | string    | required, must be a valid absolute URL          |
 | `title`       | string    | required; client may prefill from page metadata |
-| `description` | string?   | optional, ≤1000 chars                           |
-| `faviconUrl`  | string?   | optional                                        |
-| `isRead`      | boolean   | default `false`                                 |
-| `isFavorite`  | boolean   | default `false`                                 |
+| `notes`       | string?   | implemented in schema; supersedes `description` below pending reconciliation |
+| `description` | string?   | optional, ≤1000 chars — **not in current schema**, see note above |
+| `faviconUrl`  | string?   | optional — **not in current schema**            |
+| `isRead`      | boolean   | default `false` — **not in current schema**     |
+| `isFavorite`  | boolean   | default `false` — **not in current schema**     |
 | `createdAt`   | datetime  |                                                  |
 | `updatedAt`   | datetime  |                                                  |
 
