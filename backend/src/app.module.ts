@@ -10,6 +10,7 @@ import { CollectionsModule } from './collections/collections.module';
 import { HealthController } from './health/health.controller';
 import { MeModule } from './me/me.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { SharedModule } from './shared/shared.module';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { PrismaModule } from './prisma/prisma.module';
     CollectionsModule,
     BookmarksModule,
     MeModule,
+    SharedModule,
   ],
   controllers: [AppController, HealthController],
   providers: [AppService, { provide: APP_GUARD, useClass: JwtAuthGuard }],
