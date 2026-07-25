@@ -1,6 +1,6 @@
-// Resource models (Collection, Bookmark, ...) are designed in ../../API_DESIGN.md
-// and will be added in a later implementation phase — this scaffold only wires
-// up the Prisma <-> MySQL connection.
+// Resource models. See ../../API_DESIGN.md for field/endpoint contracts and
+// ../../DECISIONS.md #10 for why ids are autoincrement Int rather than cuid
+// strings.
 
 generator client {
   provider = "prisma-client-js"
@@ -9,4 +9,52 @@ generator client {
 datasource db {
   provider = "mysql"
   url      = env("DATABASE_URL")
+}
+
+/// Internal user record, keyed off the Auth0 `sub` claim. Created via
+/// just-in-time provisioning the first time a verified token is seen —
+/// see backend/src/auth/jwt.strategy.ts.
+model User {
+  id       Int    @id @default(autoincrement())
+  auth0Sub String @unique
+  email    String @unique
+
+  createdAt DateTime @default(now())
+
+  collections Collection[]
+  bookmarks   Bookmark[]
+}
+
+model Collection {
+  id   Int    @id @default(autoincrement())
+  name String
+
+  ownerId Int
+  owner   User @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  bookmarks Bookmark[]
+
+  @@index([ownerId])
+}
+
+model Bookmark {
+  id    Int     @id @default(autoincrement())
+  url   String
+  title String
+  notes String?
+
+  collectionId Int?
+  collection   Collection? @relation(fields: [collectionId], references: [id], onDelete: SetNull)
+
+  ownerId Int
+  owner   User @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([ownerId])
+  @@index([collectionId])
 }
