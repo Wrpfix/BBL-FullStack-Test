@@ -8,6 +8,7 @@ import { JwtAuthGuard } from './auth/jwt-auth.guard';
 import { BookmarksModule } from './bookmarks/bookmarks.module';
 import { CollectionsModule } from './collections/collections.module';
 import { HealthController } from './health/health.controller';
+import { MeModule } from './me/me.module';
 import { PrismaModule } from './prisma/prisma.module';
 
 @Module({
@@ -17,6 +18,7 @@ import { PrismaModule } from './prisma/prisma.module';
     AuthModule,
     CollectionsModule,
     BookmarksModule,
+    MeModule,
   ],
   controllers: [AppController, HealthController],
   providers: [AppService, { provide: APP_GUARD, useClass: JwtAuthGuard }],
