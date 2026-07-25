@@ -94,3 +94,28 @@ than squashed on merge.
 
 **Why:** Preserve the reasoning trail (including AI-assisted changes) for
 future debugging/auditing rather than collapsing it into one opaque commit.
+
+## 9. Bearer token = Access token, not ID token
+
+**Context:** Verified live against the tenant (`dev-yg.us.auth0.com`) before
+deciding — see "Auth0 tenant capabilities (verified)" in
+[API_DESIGN.md](API_DESIGN.md). Both options were compatible with what the
+tenant actually supports (authorization code + PKCE, RS256 JWKS); this was
+a design choice, not something the discovery doc forced.
+
+**Decision:** The backend validates an Auth0 **access token** requested
+with `audience=https://bbl-candidate-test-api`, not the ID token.
+
+**Why:** An access token's `aud` claim is the API identifier itself, so
+validation is a plain `aud`/`iss`/signature check with no special-casing.
+It also carries a `scope` claim, leaving room for fine-grained API
+permissions later. ID tokens are meant for the client to consume (their
+`aud` is the client ID, not the API), and using them to authorize API
+calls goes against OIDC/Auth0 guidance.
+
+**Consequences:** The frontend's Auth0 login/token exchange must request
+`audience=https://bbl-candidate-test-api` explicitly, or the resulting
+access token won't carry the right `aud` and every request will be
+rejected. Still unverified: whether the API is configured for RS256
+(signed JWT) vs. opaque access tokens in the Auth0 dashboard — confirm
+before relying on JWKS-based verification in production.
