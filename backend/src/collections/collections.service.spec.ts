@@ -154,4 +154,85 @@ describe('CollectionsService', () => {
       );
     });
   });
+
+  describe('share', () => {
+    it('scopes the token write by ownerId, enables sharing, and returns a fresh token', async () => {
+      const prisma = buildPrisma();
+      (prisma.collection.updateMany as jest.Mock).mockResolvedValue({
+        count: 1,
+      });
+      const service = new CollectionsService(prisma);
+
+      const result = await service.share(7, 1);
+
+      const updateManyMock = prisma.collection
+        .updateMany as jest.MockedFunction<typeof prisma.collection.updateMany>;
+      const [args] = updateManyMock.mock.calls[0];
+      expect(args.where).toEqual({ id: 1, ownerId: 7 });
+      expect(args.data).toEqual({
+        shareToken: result.shareToken,
+        shareEnabled: true,
+      });
+      expect(result.shareEnabled).toBe(true);
+      expect(result.shareToken).toEqual(expect.any(String));
+      // 32 random bytes, base64url-encoded: enough entropy that a fixed
+      // sanity check on length also guards against an accidental switch to
+      // a shorter/weaker encoding.
+      expect(result.shareToken.length).toBeGreaterThanOrEqual(40);
+    });
+
+    it('generates a new token every call, even if one already exists', async () => {
+      const prisma = buildPrisma();
+      (prisma.collection.updateMany as jest.Mock).mockResolvedValue({
+        count: 1,
+      });
+      const service = new CollectionsService(prisma);
+
+      const first = await service.share(7, 1);
+      const second = await service.share(7, 1);
+
+      expect(first.shareToken).not.toBe(second.shareToken);
+    });
+
+    it('404s (not 403) when the collection belongs to someone else', async () => {
+      const prisma = buildPrisma();
+      (prisma.collection.updateMany as jest.Mock).mockResolvedValue({
+        count: 0,
+      });
+      const service = new CollectionsService(prisma);
+
+      await expect(service.share(7, 999)).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+    });
+  });
+
+  describe('unshare', () => {
+    it('scopes the write by ownerId, disables sharing, and clears the token', async () => {
+      const prisma = buildPrisma();
+      (prisma.collection.updateMany as jest.Mock).mockResolvedValue({
+        count: 1,
+      });
+      const service = new CollectionsService(prisma);
+
+      await service.unshare(7, 1);
+
+      expect(prisma.collection.updateMany).toHaveBeenCalledWith({
+        where: { id: 1, ownerId: 7 },
+        data: { shareToken: null, shareEnabled: false },
+      });
+    });
+
+    it('404s (not 403) when the collection belongs to someone else', async () => {
+      const prisma = buildPrisma();
+      (prisma.collection.updateMany as jest.Mock).mockResolvedValue({
+        count: 0,
+      });
+      const service = new CollectionsService(prisma);
+
+      await expect(service.unshare(7, 999)).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+    });
+  });
 });
