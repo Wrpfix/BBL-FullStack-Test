@@ -37,6 +37,16 @@ model Collection {
 
   bookmarks Bookmark[]
 
+  /// Unguessable capability token for read-only public sharing (see
+  /// backend/src/shared). Null until POST /collections/:id/share is called
+  /// for the first time — not generated eagerly on create.
+  shareToken String? @unique
+
+  /// Whether the current shareToken (if any) is redeemable via
+  /// GET /shared/:token. DELETE /collections/:id/share sets this false AND
+  /// nulls shareToken — see CollectionsService.unshare for why.
+  shareEnabled Boolean @default(false)
+
   @@index([ownerId])
 }
 
