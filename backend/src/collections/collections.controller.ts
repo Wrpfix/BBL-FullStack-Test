@@ -82,4 +82,21 @@ export class CollectionsController {
   ) {
     return this.collectionsService.remove(user.id, id);
   }
+
+  @Post(':id/share')
+  share(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    return this.collectionsService.share(user.id, id);
+  }
+
+  @Delete(':id/share')
+  @HttpCode(204)
+  unshare(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    return this.collectionsService.unshare(user.id, id);
+  }
 }

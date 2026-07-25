@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { PaginatedResult } from '../common/paginated-result.interface';
@@ -97,5 +98,40 @@ export class CollectionsService {
       this.prisma.bookmark.count({ where: { ownerId, collectionId: id } }),
     ]);
     return { data, page, limit, total };
+  }
+
+  /**
+   * (Re)issues a fresh, unguessable share token and turns sharing on.
+   * Always generates a brand-new token — even if one already exists — so
+   * that re-sharing doubles as an implicit revoke-and-reissue of any
+   * previously distributed link, with no separate "rotate" endpoint needed.
+   */
+  async share(ownerId: number, id: number) {
+    const shareToken = randomBytes(32).toString('base64url');
+    const { count } = await this.prisma.collection.updateMany({
+      where: { id, ownerId },
+      data: { shareToken, shareEnabled: true },
+    });
+    if (count === 0) {
+      throw new NotFoundException();
+    }
+    return { shareToken, shareEnabled: true };
+  }
+
+  /**
+   * Turns sharing off. Also nulls shareToken rather than just flipping
+   * shareEnabled: POST /share always mints a fresh token on next share
+   * anyway, so there's no functional reason to retain the disabled one —
+   * and not retaining it means a stray bug that skips the shareEnabled
+   * check elsewhere can't be exploited by replaying an old token.
+   */
+  async unshare(ownerId: number, id: number) {
+    const { count } = await this.prisma.collection.updateMany({
+      where: { id, ownerId },
+      data: { shareToken: null, shareEnabled: false },
+    });
+    if (count === 0) {
+      throw new NotFoundException();
+    }
   }
 }
