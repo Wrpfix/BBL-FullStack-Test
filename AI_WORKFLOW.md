@@ -29,10 +29,14 @@ here.
 
 ## `/transcripts/`
 
-Session logs/transcripts of AI-assisted work on this repo get saved here.
-Empty by default (gitignored contents aside from `.gitkeep` may apply once
-a logging convention is chosen) — the point is traceability of what an
-agent did and why, alongside the commit history.
+Session logs/transcripts of AI-assisted work on this repo get saved here —
+the point is traceability of what an agent did and why, alongside the
+commit history. `transcripts/phase-XX.md` are hand-written summaries,
+easier to read. `transcripts/raw/` holds unedited exports of the actual
+session logs behind each phase (see [transcripts/raw/README.md](../transcripts/raw/README.md)
+for the phase→session mapping and what "unedited" means here) — the
+summaries are reconstructed after the fact, so the raw files are the
+primary source if the two ever disagree.
 
 ## Commit discipline
 
